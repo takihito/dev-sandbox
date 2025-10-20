@@ -1145,7 +1145,10 @@ function triggerGameOver() {
     return;
   }
   gameState = "gameover";
-  setOverlay("武装が停止しました", `SCORE: ${score.toString().padStart(6, "0")} / スペースキーで再スタート`);
+  setOverlay(
+    "武装が停止しました",
+    `SCORE: ${score.toString().padStart(6, "0")} / スペースキー または タップ・クリックで再スタート`,
+  );
 }
 
 function loop(timestamp) {
@@ -1205,15 +1208,43 @@ function updatePointerFromEvent(event) {
     ((event.clientY - rect.top) / rect.height) * canvas.height;
 }
 
+function setPointerCaptureSafe(target, pointerId) {
+  if (!target || typeof target.setPointerCapture !== "function") {
+    return;
+  }
+  try {
+    target.setPointerCapture(pointerId);
+  } catch (error) {
+    // ignore capture errors
+  }
+}
+
+function releasePointerCaptureSafe(target, pointerId) {
+  if (!target || typeof target.releasePointerCapture !== "function") {
+    return;
+  }
+  try {
+    if (
+      typeof target.hasPointerCapture !== "function" ||
+      target.hasPointerCapture(pointerId)
+    ) {
+      target.releasePointerCapture(pointerId);
+    }
+  } catch (error) {
+    // ignore release errors
+  }
+}
+
 function handlePointerDown(event) {
   if (!pointerState.active || pointerState.type === "mouse" || pointerState.id === event.pointerId) {
     pointerState.active = true;
     pointerState.id = event.pointerId;
     pointerState.type = event.pointerType;
     updatePointerFromEvent(event);
-    if (canvas.setPointerCapture) {
-      canvas.setPointerCapture(event.pointerId);
-    }
+    setPointerCaptureSafe(event.currentTarget, event.pointerId);
+  }
+  if (gameState === "ready" || gameState === "gameover") {
+    startGame();
   }
   event.preventDefault();
 }
@@ -1228,12 +1259,9 @@ function handlePointerMove(event) {
 }
 
 function releasePointerIfNeeded(event) {
-  if (
-    canvas.hasPointerCapture &&
-    canvas.hasPointerCapture(event.pointerId)
-  ) {
-    canvas.releasePointerCapture(event.pointerId);
-  }
+  releasePointerCaptureSafe(event.currentTarget, event.pointerId);
+  releasePointerCaptureSafe(canvas, event.pointerId);
+  releasePointerCaptureSafe(overlay, event.pointerId);
 }
 
 function handlePointerUp(event) {
@@ -1265,6 +1293,12 @@ canvas.addEventListener("pointercancel", handlePointerCancel);
 canvas.addEventListener("pointerleave", handlePointerLeave);
 canvas.addEventListener("pointerout", handlePointerLeave);
 canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+overlay.addEventListener("pointerdown", handlePointerDown);
+overlay.addEventListener("pointermove", handlePointerMove);
+overlay.addEventListener("pointerup", handlePointerUp);
+overlay.addEventListener("pointercancel", handlePointerCancel);
+overlay.addEventListener("pointerleave", handlePointerLeave);
+overlay.addEventListener("pointerout", handlePointerLeave);
 
 function init() {
   setOverlay("読み込み中…", "少しだけお待ちください");
@@ -1272,7 +1306,7 @@ function init() {
     .then(() => {
       gameState = "ready";
       updateHud();
-      setOverlay("準備完了", "スペースキーで出撃");
+      setOverlay("準備完了", "スペースキー または タップ・クリックで出撃");
       drawBackground();
       player.draw();
     })
