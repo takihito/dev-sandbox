@@ -1,0 +1,1285 @@
+"use strict";
+
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+const overlay = document.getElementById("overlay");
+const overlayTitle = document.getElementById("overlay-title");
+const overlayBody = document.getElementById("overlay-body");
+const scoreElement = document.getElementById("score");
+const attackLabel = document.getElementById("power-level");
+
+const ASSET_SOURCES = {
+  background: "images/background.png",
+  player: "images/player_ship.png",
+  enemy1: "images/enemy1.png",
+  enemy2: "images/enemy2.png",
+  enemy3: "images/enemy3.png",
+  laser: "images/laser_shot.png",
+  explosion: "images/explosion_effect.png",
+  powerUp: "images/power_up_item.png",
+};
+
+const MAX_ATTACK_LEVEL = 10;
+const ATTACK_MULTIPLIERS = Array.from({ length: MAX_ATTACK_LEVEL + 1 }, (_, i) =>
+  Math.max(1, i),
+);
+
+const SUPPORT_SHIP_COUNTS_BY_LEVEL = [0, 0, 1, 3, 5, 7, 9, 11, 13, 14, 15];
+const MAX_SUPPORT_SHIPS =
+  SUPPORT_SHIP_COUNTS_BY_LEVEL[SUPPORT_SHIP_COUNTS_BY_LEVEL.length - 1];
+const SUPPORT_COLUMN_ORDER = [1, 0, 2];
+const SUPPORT_COLUMN_OFFSETS = [-70, 0, 70];
+const SUPPORT_BASE_REST_DISTANCE = 72;
+const SUPPORT_SEGMENT_SPACING = 58;
+
+function getSupportCountForLevel(powerLevel) {
+  const index = Math.min(
+    SUPPORT_SHIP_COUNTS_BY_LEVEL.length - 1,
+    Math.max(0, powerLevel),
+  );
+  return SUPPORT_SHIP_COUNTS_BY_LEVEL[index];
+}
+
+function computeSupportFormationSlots(count) {
+  const slots = [];
+  const targetCount = Math.min(count, MAX_SUPPORT_SHIPS);
+  let row = 0;
+  while (slots.length < targetCount) {
+    for (const column of SUPPORT_COLUMN_ORDER) {
+      if (slots.length === targetCount) {
+        break;
+      }
+      slots.push({ column, row });
+    }
+    row += 1;
+  }
+  return slots;
+}
+
+function formatSupportSlotKey(column, row) {
+  return `${column}:${row}`;
+}
+
+const ENEMY_DEFS = {
+  grunt: {
+    sprite: "enemy1",
+    width: 68,
+    height: 56,
+    speed: 230,
+    hp: 1,
+    points: 120,
+    dropRate: 0.18,
+    fireInterval: null,
+  },
+  midBoss: {
+    sprite: "enemy2",
+    width: 128,
+    height: 104,
+    speed: 170,
+    hp: 5,
+    points: 620,
+    dropRate: 0.45,
+    fireInterval: 2.4,
+  },
+  boss: {
+    sprite: "enemy3",
+    width: 220,
+    height: 164,
+    speed: 110,
+    hp: 20,
+    points: 3200,
+    dropRate: 1,
+    fireInterval: 1.7,
+  },
+};
+
+const KEY_BINDINGS = {
+  ArrowUp: "up",
+  ArrowDown: "down",
+  ArrowLeft: "left",
+  ArrowRight: "right",
+  w: "up",
+  s: "down",
+  a: "left",
+  d: "right",
+};
+
+const assets = {};
+const inputState = {
+  up: false,
+  down: false,
+  left: false,
+  right: false,
+};
+
+const pointerState = {
+  active: false,
+  id: null,
+  type: null,
+  x: canvas.width / 2,
+  y: canvas.height / 2,
+};
+
+const enemyShots = [];
+const enemies = [];
+const powerUps = [];
+const explosions = [];
+
+let gameState = "loading";
+let score = 0;
+let lastTime = 0;
+let backgroundOffset = 0;
+let enemySpawnTimer = 0;
+let midBossTimer = 0;
+let bossTimer = 0;
+let roamingPowerUpTimer = 0;
+let elapsedTime = 0;
+
+class Player {
+  constructor() {
+    this.width = 84;
+    this.height = 72;
+    this.speed = 260;
+    this.invincibleTimer = 0;
+    this.lastMoveX = 0;
+    this.lastMoveY = 0;
+    this.orientationAngle = 0;
+    this.attackCooldownTimer = 0;
+    this.supportShips = [];
+    this.reset();
+  }
+
+  reset() {
+    this.x = 120;
+    this.y = canvas.height / 2 - this.height / 2;
+    this.powerLevel = 1;
+    this.invincibleTimer = 0;
+    this.lastMoveX = 0;
+    this.lastMoveY = 0;
+    this.orientationAngle = 0;
+    this.attackCooldownTimer = 0;
+    this.supportShips = [];
+    this.syncSupportShips();
+  }
+
+  getBounds() {
+    return {
+      x: this.x + this.width * 0.18,
+      y: this.y + this.height * 0.18,
+      width: this.width * 0.64,
+      height: this.height * 0.64,
+    };
+  }
+
+  getCenter() {
+    return {
+      x: this.x + this.width / 2,
+      y: this.y + this.height / 2,
+    };
+  }
+
+  getAttackDamage() {
+    return ATTACK_MULTIPLIERS[this.powerLevel] || 0;
+  }
+
+  upgrade(type) {
+    if (type === "power") {
+      if (this.powerLevel < MAX_ATTACK_LEVEL) {
+        this.powerLevel += 1;
+        this.syncSupportShips();
+        return true;
+      }
+      return false;
+    }
+    return false;
+  }
+
+  decreasePower() {
+    const previous = this.powerLevel;
+    this.powerLevel = Math.max(1, this.powerLevel - 1);
+    this.syncSupportShips();
+    return this.powerLevel !== previous;
+  }
+
+  update(delta) {
+    const previousX = this.x;
+    const previousY = this.y;
+
+    if (this.invincibleTimer > 0) {
+      this.invincibleTimer = Math.max(0, this.invincibleTimer - delta);
+    }
+    if (this.attackCooldownTimer > 0) {
+      this.attackCooldownTimer = Math.max(0, this.attackCooldownTimer - delta);
+    }
+
+    if (pointerState.active) {
+      const targetX = clamp(
+        pointerState.x - this.width / 2,
+        0,
+        canvas.width - this.width,
+      );
+      const targetY = clamp(
+        pointerState.y - this.height / 2,
+        0,
+        canvas.height - this.height,
+      );
+      const smoothing = Math.min(1, delta * 8);
+      this.x += (targetX - this.x) * smoothing;
+      this.y += (targetY - this.y) * smoothing;
+    } else {
+      const horizontal =
+        (inputState.right ? 1 : 0) - (inputState.left ? 1 : 0);
+      const vertical =
+        (inputState.down ? 1 : 0) - (inputState.up ? 1 : 0);
+
+      let vx = 0;
+      let vy = 0;
+      if (horizontal !== 0 || vertical !== 0) {
+        const length = Math.hypot(horizontal, vertical) || 1;
+        vx = (horizontal / length) * this.speed;
+        vy = (vertical / length) * this.speed;
+      }
+
+      this.x += vx * delta;
+      this.y += vy * delta;
+    }
+
+    this.x = clamp(this.x, 0, canvas.width - this.width);
+    this.y = clamp(this.y, 0, canvas.height - this.height);
+
+    const movementX = this.x - previousX;
+    const movementY = this.y - previousY;
+    this.updateOrientationAngle(movementX, movementY, delta);
+    this.supportShips.forEach((ship) => {
+      ship.update(delta);
+    });
+  }
+
+  updateOrientationAngle(movementX, movementY, delta) {
+    const velocityThreshold = 0.35;
+    if (
+      Math.abs(movementX) > velocityThreshold ||
+      Math.abs(movementY) > velocityThreshold
+    ) {
+      this.lastMoveX = movementX;
+      this.lastMoveY = movementY;
+    } else {
+      this.lastMoveX *= 0.8;
+      this.lastMoveY *= 0.8;
+      if (Math.abs(this.lastMoveX) < 0.05) {
+        this.lastMoveX = 0;
+      }
+      if (Math.abs(this.lastMoveY) < 0.05) {
+        this.lastMoveY = 0;
+      }
+    }
+
+    const magnitude = Math.hypot(this.lastMoveX, this.lastMoveY);
+    if (magnitude > 0.05) {
+      const targetAngle = Math.atan2(this.lastMoveY, this.lastMoveX);
+      const diff =
+        ((targetAngle - this.orientationAngle + Math.PI) % (Math.PI * 2)) -
+        Math.PI;
+      const smoothing = Math.min(1, delta * 10);
+      this.orientationAngle += diff * smoothing;
+    }
+  }
+
+  draw() {
+    const sprite = assets.player;
+    this.supportShips.forEach((ship) =>
+      ship.draw(sprite, this.invincibleTimer),
+    );
+    if (
+      this.invincibleTimer > 0 &&
+      Math.floor(this.invincibleTimer * 12) % 2 === 0
+    ) {
+      ctx.save();
+      ctx.globalAlpha = 0.45;
+      this.drawRotatedSprite(sprite);
+      ctx.restore();
+    } else {
+      this.drawRotatedSprite(sprite);
+    }
+  }
+
+  syncSupportShips(options = {}) {
+    const { allowReplenish = true } = options;
+    const desired = getSupportCountForLevel(this.powerLevel);
+    while (this.supportShips.length > desired) {
+      this.supportShips.pop();
+    }
+    if (allowReplenish) {
+      while (this.supportShips.length < desired) {
+        const ship = new SupportShip();
+        this.supportShips.push(ship);
+      }
+    }
+    this.configureSupportFormation();
+  }
+
+  configureSupportFormation() {
+    const count = this.supportShips.length;
+    if (count === 0) {
+      return;
+    }
+    const slots = computeSupportFormationSlots(count);
+    const slotIndexMap = new Map();
+    for (let i = 0; i < slots.length; i += 1) {
+      const slot = slots[i];
+      const ship = this.supportShips[i];
+      ship.setFormation(slot.column, slot.row);
+      slotIndexMap.set(formatSupportSlotKey(slot.column, slot.row), i);
+    }
+    for (let i = 0; i < slots.length; i += 1) {
+      const slot = slots[i];
+      const ship = this.supportShips[i];
+      if (slot.row === 0) {
+        ship.alignToLeader(this);
+      } else {
+        const leaderIndex = slotIndexMap.get(
+          formatSupportSlotKey(slot.column, slot.row - 1),
+        );
+        const leader =
+          leaderIndex !== undefined
+            ? this.supportShips[leaderIndex]
+            : this;
+        ship.alignToLeader(leader);
+      }
+    }
+  }
+
+  drawRotatedSprite(image) {
+    const centerX = this.x + this.width / 2;
+    const centerY = this.y + this.height / 2;
+    ctx.save();
+    ctx.translate(centerX, centerY);
+    ctx.rotate(this.orientationAngle);
+    ctx.drawImage(
+      image,
+      -this.width / 2,
+      -this.height / 2,
+      this.width,
+      this.height,
+    );
+    ctx.restore();
+  }
+}
+
+class SupportShip {
+  constructor() {
+    this.width = 56;
+    this.height = 48;
+    this.x = canvas.width / 2 - this.width / 2;
+    this.y = canvas.height / 2 - this.height / 2;
+    this.vx = 0;
+    this.vy = 0;
+    this.restDistance = SUPPORT_BASE_REST_DISTANCE;
+    this.stiffness = 18;
+    this.damping = 3;
+    this.orientationAngle = 0;
+    this.maxHits = 5;
+    this.remainingHits = this.maxHits;
+    this.columnIndex = 1;
+    this.rowIndex = 0;
+    this.lateralOffset = 0;
+    this.leader = null;
+  }
+
+  setFormation(columnIndex, rowIndex) {
+    this.columnIndex = columnIndex;
+    this.rowIndex = rowIndex;
+    this.restDistance =
+      rowIndex === 0 ? SUPPORT_BASE_REST_DISTANCE : SUPPORT_SEGMENT_SPACING;
+    this.lateralOffset =
+      rowIndex === 0 && SUPPORT_COLUMN_OFFSETS[columnIndex] !== undefined
+        ? SUPPORT_COLUMN_OFFSETS[columnIndex]
+        : 0;
+  }
+
+  alignToLeader(leader) {
+    if (leader) {
+      this.leader = leader;
+    }
+    if (!this.leader) {
+      return;
+    }
+    const target = this.getTargetPosition();
+    this.x = clamp(
+      target.x - this.width / 2,
+      0,
+      canvas.width - this.width,
+    );
+    this.y = clamp(
+      target.y - this.height / 2,
+      0,
+      canvas.height - this.height,
+    );
+    this.vx = 0;
+    this.vy = 0;
+    this.orientationAngle = this.getLeaderAngle();
+  }
+
+  getLeaderAngle() {
+    if (
+      this.leader &&
+      typeof this.leader.orientationAngle === "number"
+    ) {
+      return this.leader.orientationAngle;
+    }
+    return 0;
+  }
+
+  getTargetPosition() {
+    if (!this.leader) {
+      const { x, y } = this.getCenter();
+      return { x, y };
+    }
+    const leaderCenter = this.leader.getCenter();
+    const baseAngle = this.getLeaderAngle();
+    const backwardAngle = baseAngle + Math.PI;
+    const lateralAngle = baseAngle + Math.PI / 2;
+    const offsetX =
+      Math.cos(backwardAngle) * this.restDistance +
+      Math.cos(lateralAngle) * this.lateralOffset;
+    const offsetY =
+      Math.sin(backwardAngle) * this.restDistance +
+      Math.sin(lateralAngle) * this.lateralOffset;
+    return {
+      x: leaderCenter.x + offsetX,
+      y: leaderCenter.y + offsetY,
+    };
+  }
+
+  update(delta) {
+    if (!this.leader) {
+      return;
+    }
+    const target = this.getTargetPosition();
+    const { x: centerX, y: centerY } = this.getCenter();
+    const dx = target.x - centerX;
+    const dy = target.y - centerY;
+    this.vx += dx * this.stiffness * delta;
+    this.vy += dy * this.stiffness * delta;
+    const dampingFactor = Math.exp(-this.damping * delta);
+    this.vx *= dampingFactor;
+    this.vy *= dampingFactor;
+
+    this.x += this.vx * delta;
+    this.y += this.vy * delta;
+
+    this.x = clamp(this.x, 0, canvas.width - this.width);
+    this.y = clamp(this.y, 0, canvas.height - this.height);
+
+    const speed = Math.hypot(this.vx, this.vy);
+    if (speed > 6) {
+      this.orientationAngle = Math.atan2(this.vy, this.vx);
+    } else {
+      const leaderAngle = this.getLeaderAngle();
+      const diff =
+        ((leaderAngle - this.orientationAngle + Math.PI) % (Math.PI * 2)) -
+        Math.PI;
+      this.orientationAngle += diff * Math.min(1, delta * 4);
+    }
+  }
+
+  draw(sprite, invincibleTimer) {
+    const centerX = this.x + this.width / 2;
+    const centerY = this.y + this.height / 2;
+    ctx.save();
+    ctx.translate(centerX, centerY);
+    ctx.rotate(this.orientationAngle);
+    if (
+      invincibleTimer > 0 &&
+      Math.floor(invincibleTimer * 12) % 2 === 0
+    ) {
+      ctx.globalAlpha = 0.45;
+    }
+    ctx.drawImage(
+      sprite,
+      -this.width / 2,
+      -this.height / 2,
+      this.width,
+      this.height,
+    );
+    ctx.restore();
+  }
+
+  getBounds() {
+    return {
+      x: this.x + this.width * 0.2,
+      y: this.y + this.height * 0.2,
+      width: this.width * 0.6,
+      height: this.height * 0.6,
+    };
+  }
+
+  getCenter() {
+    return {
+      x: this.x + this.width / 2,
+      y: this.y + this.height / 2,
+    };
+  }
+
+  absorbHit() {
+    this.remainingHits = Math.max(0, this.remainingHits - 1);
+    return this.remainingHits <= 0;
+  }
+}
+
+class EnemyShot {
+  constructor(x, y, vx, vy) {
+    this.width = 56;
+    this.height = 16;
+    this.x = x;
+    this.y = y - this.height / 2;
+    this.vx = vx;
+    this.vy = vy;
+  }
+
+  update(delta) {
+    this.x += this.vx * delta;
+    this.y += this.vy * delta;
+  }
+
+  draw() {
+    ctx.save();
+    ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+    ctx.rotate(Math.atan2(this.vy, this.vx));
+    ctx.filter = "hue-rotate(180deg)";
+    ctx.drawImage(assets.laser, -this.width / 2, -this.height / 2, this.width, this.height);
+    ctx.filter = "none";
+    ctx.restore();
+  }
+
+  getBounds() {
+    return {
+      x: this.x + 6,
+      y: this.y + 4,
+      width: this.width - 12,
+      height: this.height - 8,
+    };
+  }
+
+  get isOffscreen() {
+    return (
+      this.x + this.width < -120 ||
+      this.x - this.width > canvas.width + 120 ||
+      this.y > canvas.height + 120 ||
+      this.y + this.height < -120
+    );
+  }
+}
+
+class Enemy {
+  constructor(type) {
+    this.type = type;
+    const def = ENEMY_DEFS[type];
+    this.width = def.width;
+    this.height = def.height;
+    this.hp = def.hp;
+    this.points = def.points;
+    this.dropRate = def.dropRate;
+    this.baseSpeed = def.speed;
+    this.x = canvas.width + Math.random() * 240;
+    this.y = clamp(
+      Math.random() * (canvas.height - this.height - 80) + 40,
+      20,
+      canvas.height - this.height - 20,
+    );
+    this.time = 0;
+    this.seed = Math.random() * Math.PI * 2;
+    this.fireInterval = def.fireInterval;
+    this.fireTimer =
+      def.fireInterval !== null
+        ? def.fireInterval * (0.7 + Math.random() * 0.6)
+        : null;
+  }
+
+  update(delta) {
+    this.time += delta;
+    const drift = Math.sin(this.time * 3 + this.seed);
+
+    if (this.type === "grunt") {
+      this.x -= this.baseSpeed * delta;
+      this.y += drift * 28 * delta;
+    } else if (this.type === "midBoss") {
+      this.x -= this.baseSpeed * delta;
+      this.y += Math.sin(this.time * 2 + this.seed) * 140 * delta;
+    } else if (this.type === "boss") {
+      this.x -= this.baseSpeed * delta * 0.7;
+      this.y += Math.sin(this.time * 1.6 + this.seed) * 160 * delta;
+    }
+
+    this.y = clamp(this.y, 12, canvas.height - this.height - 12);
+
+    if (this.fireTimer !== null) {
+      this.fireTimer -= delta;
+      if (this.fireTimer <= 0) {
+        this.shoot();
+        const def = ENEMY_DEFS[this.type];
+        this.fireTimer = def.fireInterval * (0.75 + Math.random() * 0.7);
+      }
+    }
+  }
+
+  shoot() {
+    if (this.type === "midBoss") {
+      const bulletSpeed = 260;
+      enemyShots.push(
+        new EnemyShot(
+          this.x,
+          this.y + this.height / 2,
+          -bulletSpeed,
+          0,
+        ),
+      );
+    } else if (this.type === "boss") {
+      const originX = this.x + this.width * 0.1;
+      const originY = this.y + this.height / 2;
+      const targetX = player.x + player.width / 2;
+      const targetY = player.y + player.height / 2;
+      const dx = targetX - originX;
+      const dy = targetY - originY;
+      const distance = Math.hypot(dx, dy) || 1;
+      const speed = 300;
+      const vx = (-speed * 0.6) + (dx / distance) * speed * 0.4;
+      const vy = (dy / distance) * speed;
+
+      enemyShots.push(new EnemyShot(originX, originY, vx, vy));
+      enemyShots.push(new EnemyShot(originX, originY - 36, -speed, -60));
+      enemyShots.push(new EnemyShot(originX, originY + 36, -speed, 60));
+    }
+  }
+
+  takeDamage(amount) {
+    this.hp -= amount;
+  }
+
+  get isDead() {
+    return this.hp <= 0;
+  }
+
+  get isOffscreen() {
+    return this.x + this.width < -260;
+  }
+
+  draw() {
+    const sprite = assets[ENEMY_DEFS[this.type].sprite];
+    ctx.drawImage(sprite, this.x, this.y, this.width, this.height);
+  }
+
+  getBounds() {
+    return {
+      x: this.x + this.width * 0.12,
+      y: this.y + this.height * 0.18,
+      width: this.width * 0.76,
+      height: this.height * 0.64,
+    };
+  }
+}
+
+class PowerUp {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.width = 48;
+    this.height = 48;
+    this.time = 0;
+  }
+
+  update(delta) {
+    this.time += delta;
+    this.x -= 180 * delta;
+    this.y += Math.sin(this.time * 3) * 60 * delta;
+    this.y = clamp(this.y, 12, canvas.height - this.height - 12);
+  }
+
+  draw() {
+    ctx.drawImage(assets.powerUp, this.x, this.y, this.width, this.height);
+    ctx.save();
+    ctx.font = "bold 16px 'Segoe UI'";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#ffd548";
+    ctx.fillText("ATK", this.x + this.width / 2, this.y + this.height / 2 + 6);
+    ctx.restore();
+  }
+
+  getBounds() {
+    return {
+      x: this.x + 8,
+      y: this.y + 8,
+      width: this.width - 16,
+      height: this.height - 16,
+    };
+  }
+
+  get isOffscreen() {
+    return this.x + this.width < -120;
+  }
+}
+
+class Explosion {
+  constructor(x, y, size) {
+    this.x = x;
+    this.y = y;
+    this.size = size;
+    this.elapsed = 0;
+    this.duration = 0.55;
+  }
+
+  update(delta) {
+    this.elapsed += delta;
+  }
+
+  draw() {
+    const progress = clamp(this.elapsed / this.duration, 0, 1);
+    const scale = 0.7 + progress * 1.6;
+    const alpha = 1 - progress;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(
+      assets.explosion,
+      this.x - (this.size * scale) / 2,
+      this.y - (this.size * scale) / 2,
+      this.size * scale,
+      this.size * scale,
+    );
+    ctx.restore();
+  }
+
+  get done() {
+    return this.elapsed >= this.duration;
+  }
+}
+
+const player = new Player();
+
+function loadAssets() {
+  const entries = Object.entries(ASSET_SOURCES);
+  return Promise.all(
+    entries.map(
+      ([key, src]) =>
+        new Promise((resolve, reject) => {
+          const img = new Image();
+          img.src = src;
+          img.onload = () => {
+            assets[key] = img;
+            resolve();
+          };
+          img.onerror = reject;
+        }),
+    ),
+  );
+}
+
+function updateGame(delta) {
+  elapsedTime += delta;
+  backgroundOffset = (backgroundOffset + 90 * delta) % canvas.width;
+
+  player.update(delta);
+
+  updateEnemyShots(delta);
+  updateEnemies(delta);
+  updatePowerUps(delta);
+  updateExplosions(delta);
+
+  handleCollisions();
+  handleSpawns(delta);
+}
+
+function updateEnemyShots(delta) {
+  for (let i = enemyShots.length - 1; i >= 0; i -= 1) {
+    const shot = enemyShots[i];
+    shot.update(delta);
+    if (shot.isOffscreen) {
+      enemyShots.splice(i, 1);
+    }
+  }
+}
+
+function updateEnemies(delta) {
+  for (let i = enemies.length - 1; i >= 0; i -= 1) {
+    const enemy = enemies[i];
+    enemy.update(delta);
+
+    if (enemy.isDead) {
+      onEnemyDefeated(enemy);
+      enemies.splice(i, 1);
+      continue;
+    }
+
+    if (enemy.isOffscreen) {
+      enemies.splice(i, 1);
+    }
+  }
+}
+
+function updatePowerUps(delta) {
+  for (let i = powerUps.length - 1; i >= 0; i -= 1) {
+    const item = powerUps[i];
+    item.update(delta);
+    if (item.isOffscreen) {
+      powerUps.splice(i, 1);
+    }
+  }
+}
+
+function updateExplosions(delta) {
+  for (let i = explosions.length - 1; i >= 0; i -= 1) {
+    const boom = explosions[i];
+    boom.update(delta);
+    if (boom.done) {
+      explosions.splice(i, 1);
+    }
+  }
+}
+
+function handleSpawns(delta) {
+  const spawnInterval = Math.max(0.45, 1.3 - elapsedTime * 0.01);
+  enemySpawnTimer -= delta;
+  if (enemySpawnTimer <= 0) {
+    spawnEnemy("grunt");
+    enemySpawnTimer = spawnInterval;
+  }
+
+  midBossTimer -= delta;
+  if (midBossTimer <= 0 && !enemies.some((e) => e.type === "midBoss")) {
+    spawnEnemy("midBoss");
+    midBossTimer = 10 + Math.random() * 6;
+  }
+
+  bossTimer -= delta;
+  if (bossTimer <= 0 && !enemies.some((e) => e.type === "boss")) {
+    spawnEnemy("boss");
+    bossTimer = 24 + Math.random() * 10;
+  }
+
+  roamingPowerUpTimer -= delta;
+  if (roamingPowerUpTimer <= 0) {
+    spawnPowerUp(
+      canvas.width + 80,
+      Math.random() * (canvas.height - 120) + 60,
+    );
+    roamingPowerUpTimer = 14 + Math.random() * 8;
+  }
+}
+
+function spawnEnemy(type) {
+  enemies.push(new Enemy(type));
+}
+
+function spawnPowerUp(x, y) {
+  powerUps.push(new PowerUp(x, y));
+}
+
+function onEnemyDefeated(enemy) {
+  score += enemy.points;
+  updateHud();
+  explosions.push(
+    new Explosion(
+      enemy.x + enemy.width / 2,
+      enemy.y + enemy.height / 2,
+      Math.max(enemy.width, enemy.height),
+    ),
+  );
+
+  if (Math.random() < enemy.dropRate) {
+    spawnPowerUp(enemy.x, enemy.y + enemy.height / 2 - 20);
+  }
+}
+
+function handleCollisions() {
+  const playerBounds = player.getBounds();
+
+  for (let i = enemies.length - 1; i >= 0; i -= 1) {
+    const enemy = enemies[i];
+    const enemyBounds = enemy.getBounds();
+    let handledBySupport = false;
+
+    for (let s = player.supportShips.length - 1; s >= 0; s -= 1) {
+      const support = player.supportShips[s];
+      const supportBounds = support.getBounds();
+      if (rectsOverlap(supportBounds, enemyBounds)) {
+        const supportCenter = support.getCenter();
+        if (player.invincibleTimer <= 0) {
+          const destroyed = support.absorbHit();
+          const explosionSize = destroyed
+            ? Math.max(96, Math.min(enemy.width, enemy.height))
+            : Math.max(60, Math.min(enemy.width, enemy.height));
+          explosions.push(
+            new Explosion(supportCenter.x, supportCenter.y, explosionSize),
+          );
+          if (destroyed) {
+            player.supportShips.splice(s, 1);
+            player.syncSupportShips({ allowReplenish: false });
+          }
+          const enemyCenterX = enemy.x + enemy.width / 2;
+          const enemyCenterY = enemy.y + enemy.height / 2;
+          const angle = Math.atan2(
+            enemyCenterY - supportCenter.y,
+            enemyCenterX - supportCenter.x,
+          );
+          const pushDistance = 60;
+          enemy.x = clamp(
+            enemy.x + Math.cos(angle) * pushDistance,
+            -enemy.width,
+            canvas.width,
+          );
+          enemy.y = clamp(
+            enemy.y + Math.sin(angle) * pushDistance,
+            -enemy.height,
+            canvas.height - enemy.height,
+          );
+        }
+        handledBySupport = true;
+        break;
+      }
+    }
+
+    if (handledBySupport) {
+      continue;
+    }
+
+    if (rectsOverlap(playerBounds, enemyBounds)) {
+      if (player.attackCooldownTimer <= 0) {
+        const damage = player.getAttackDamage();
+        if (damage > 0) {
+          enemy.takeDamage(damage);
+          const defeated = enemy.isDead;
+          if (defeated) {
+            onEnemyDefeated(enemy);
+            enemies.splice(i, 1);
+            player.attackCooldownTimer = 0.28;
+            break;
+          } else {
+            explosions.push(
+              new Explosion(
+                enemy.x + enemy.width / 2,
+                enemy.y + enemy.height / 2,
+                Math.max(72, Math.min(enemy.width, enemy.height)),
+              ),
+            );
+          }
+        }
+        player.attackCooldownTimer = 0.28;
+      }
+      const knockback = 70;
+      player.x = clamp(player.x - knockback, 0, canvas.width - player.width);
+      player.y = clamp(player.y, 0, canvas.height - player.height);
+      break;
+    }
+  }
+
+  for (let i = enemyShots.length - 1; i >= 0; i -= 1) {
+    const shot = enemyShots[i];
+    const shotBounds = shot.getBounds();
+    let blockedBySupport = false;
+
+    for (let s = player.supportShips.length - 1; s >= 0; s -= 1) {
+      const support = player.supportShips[s];
+      if (rectsOverlap(support.getBounds(), shotBounds)) {
+        enemyShots.splice(i, 1);
+        if (player.invincibleTimer <= 0) {
+          const supportCenter = support.getCenter();
+          const destroyed = support.absorbHit();
+          const explosionSize = destroyed ? 96 : 64;
+          explosions.push(
+            new Explosion(supportCenter.x, supportCenter.y, explosionSize),
+          );
+          if (destroyed) {
+            player.supportShips.splice(s, 1);
+            player.syncSupportShips({ allowReplenish: false });
+          }
+        }
+        blockedBySupport = true;
+        break;
+      }
+    }
+
+    if (blockedBySupport) {
+      continue;
+    }
+
+    if (rectsOverlap(playerBounds, shotBounds)) {
+      enemyShots.splice(i, 1);
+      handlePlayerHit();
+    }
+  }
+
+  for (let i = powerUps.length - 1; i >= 0; i -= 1) {
+    const item = powerUps[i];
+    if (rectsOverlap(playerBounds, item.getBounds())) {
+      const applied = player.upgrade("power");
+      if (!applied) {
+        score += 200;
+        updateHud();
+      }
+      powerUps.splice(i, 1);
+      explosions.push(
+        new Explosion(
+          player.x + player.width / 2,
+          player.y + player.height / 2,
+          80,
+        ),
+      );
+      updateHud();
+    }
+  }
+}
+
+function handlePlayerHit() {
+  if (player.invincibleTimer > 0) {
+    return;
+  }
+
+  player.decreasePower();
+  updateHud();
+  explosions.push(
+    new Explosion(
+      player.x + player.width / 2,
+      player.y + player.height / 2,
+      96,
+    ),
+  );
+  player.invincibleTimer = 1.2;
+  player.attackCooldownTimer = 0;
+}
+
+function drawGame() {
+  drawBackground();
+  drawEnemyShots();
+  drawPowerUps();
+  drawEnemies();
+  player.draw();
+  drawExplosions();
+}
+
+function drawBackground() {
+  const bg = assets.background;
+  if (!bg) {
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    return;
+  }
+
+  const offset = backgroundOffset % canvas.width;
+  ctx.drawImage(bg, -offset, 0, canvas.width, canvas.height);
+  ctx.drawImage(bg, canvas.width - offset, 0, canvas.width, canvas.height);
+}
+
+function drawEnemyShots() {
+  enemyShots.forEach((shot) => shot.draw());
+}
+
+function drawEnemies() {
+  enemies.forEach((enemy) => enemy.draw());
+}
+
+function drawPowerUps() {
+  powerUps.forEach((item) => item.draw());
+}
+
+function drawExplosions() {
+  explosions.forEach((boom) => boom.draw());
+}
+
+function rectsOverlap(a, b) {
+  return !(
+    a.x + a.width < b.x ||
+    a.x > b.x + b.width ||
+    a.y + a.height < b.y ||
+    a.y > b.y + b.height
+  );
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function updateHud() {
+  scoreElement.textContent = score.toString().padStart(6, "0");
+  attackLabel.textContent = `ATTACK: ${player.powerLevel} / ${MAX_ATTACK_LEVEL}`;
+}
+
+function setOverlay(title, body) {
+  overlayTitle.textContent = title;
+  overlayBody.textContent = body;
+  overlay.classList.remove("hidden");
+}
+
+function hideOverlay() {
+  overlay.classList.add("hidden");
+}
+
+function resetGame() {
+  score = 0;
+  elapsedTime = 0;
+  backgroundOffset = 0;
+  enemySpawnTimer = 0.5;
+  midBossTimer = 12;
+  bossTimer = 26;
+  roamingPowerUpTimer = 10;
+  enemyShots.length = 0;
+  enemies.length = 0;
+  powerUps.length = 0;
+  explosions.length = 0;
+  player.reset();
+  updateHud();
+}
+
+function startGame() {
+  if (gameState === "loading") {
+    return;
+  }
+  resetGame();
+  hideOverlay();
+  gameState = "running";
+  lastTime = performance.now();
+  requestAnimationFrame(loop);
+}
+
+function triggerGameOver() {
+  if (gameState !== "running") {
+    return;
+  }
+  gameState = "gameover";
+  setOverlay("武装が停止しました", `SCORE: ${score.toString().padStart(6, "0")} / スペースキーで再スタート`);
+}
+
+function loop(timestamp) {
+  if (gameState !== "running") {
+    return;
+  }
+
+  const delta = Math.min((timestamp - lastTime) / 1000, 0.05);
+  lastTime = timestamp;
+
+  updateGame(delta);
+  drawGame();
+
+  if (gameState === "running") {
+    requestAnimationFrame(loop);
+  }
+}
+
+function handleKeyDown(event) {
+  const key = event.key;
+  if (key in KEY_BINDINGS) {
+    inputState[KEY_BINDINGS[key]] = true;
+    event.preventDefault();
+  }
+
+  if (key.length === 1 && KEY_BINDINGS[key.toLowerCase()]) {
+    inputState[KEY_BINDINGS[key.toLowerCase()]] = true;
+    event.preventDefault();
+  }
+
+  if (event.code === "Space") {
+    event.preventDefault();
+    if (gameState === "ready" || gameState === "gameover") {
+      startGame();
+    }
+  }
+}
+
+function handleKeyUp(event) {
+  const key = event.key;
+  if (key in KEY_BINDINGS) {
+    inputState[KEY_BINDINGS[key]] = false;
+    event.preventDefault();
+  }
+
+  if (key.length === 1 && KEY_BINDINGS[key.toLowerCase()]) {
+    inputState[KEY_BINDINGS[key.toLowerCase()]] = false;
+    event.preventDefault();
+  }
+}
+
+function updatePointerFromEvent(event) {
+  const rect = canvas.getBoundingClientRect();
+  pointerState.x =
+    ((event.clientX - rect.left) / rect.width) * canvas.width;
+  pointerState.y =
+    ((event.clientY - rect.top) / rect.height) * canvas.height;
+}
+
+function handlePointerDown(event) {
+  if (!pointerState.active || pointerState.type === "mouse" || pointerState.id === event.pointerId) {
+    pointerState.active = true;
+    pointerState.id = event.pointerId;
+    pointerState.type = event.pointerType;
+    updatePointerFromEvent(event);
+    if (canvas.setPointerCapture) {
+      canvas.setPointerCapture(event.pointerId);
+    }
+  }
+  event.preventDefault();
+}
+
+function handlePointerMove(event) {
+  if (pointerState.active && event.pointerId === pointerState.id) {
+    updatePointerFromEvent(event);
+    event.preventDefault();
+  } else if (event.pointerType === "mouse") {
+    updatePointerFromEvent(event);
+  }
+}
+
+function releasePointerIfNeeded(event) {
+  if (
+    canvas.hasPointerCapture &&
+    canvas.hasPointerCapture(event.pointerId)
+  ) {
+    canvas.releasePointerCapture(event.pointerId);
+  }
+}
+
+function handlePointerUp(event) {
+  if (event.pointerId === pointerState.id) {
+    pointerState.active = false;
+    pointerState.id = null;
+    pointerState.type = null;
+  }
+  releasePointerIfNeeded(event);
+  event.preventDefault();
+}
+
+function handlePointerCancel(event) {
+  handlePointerUp(event);
+}
+
+function handlePointerLeave() {
+  pointerState.active = false;
+  pointerState.id = null;
+  pointerState.type = null;
+}
+
+document.addEventListener("keydown", handleKeyDown);
+document.addEventListener("keyup", handleKeyUp);
+canvas.addEventListener("pointerdown", handlePointerDown);
+canvas.addEventListener("pointermove", handlePointerMove);
+canvas.addEventListener("pointerup", handlePointerUp);
+canvas.addEventListener("pointercancel", handlePointerCancel);
+canvas.addEventListener("pointerleave", handlePointerLeave);
+canvas.addEventListener("pointerout", handlePointerLeave);
+canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+
+function init() {
+  setOverlay("読み込み中…", "少しだけお待ちください");
+  loadAssets()
+    .then(() => {
+      gameState = "ready";
+      updateHud();
+      setOverlay("準備完了", "スペースキーで出撃");
+      drawBackground();
+      player.draw();
+    })
+    .catch((error) => {
+      console.error("Failed to load assets", error);
+      setOverlay("エラー", "画像の読み込みに失敗しました。再読み込みしてください。");
+    });
+}
+
+window.addEventListener("load", init);
