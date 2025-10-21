@@ -150,6 +150,7 @@ class Player {
     this.lastMoveY = 0;
     this.orientationAngle = 0;
     this.attackCooldownTimer = 0;
+    this.knockbackVelocityX = 0;
     this.supportShips = [];
     this.reset();
   }
@@ -163,6 +164,7 @@ class Player {
     this.lastMoveY = 0;
     this.orientationAngle = 0;
     this.attackCooldownTimer = 0;
+    this.knockbackVelocityX = 0;
     this.supportShips = [];
     this.syncSupportShips();
   }
@@ -217,6 +219,17 @@ class Player {
     return this.powerLevel !== previous;
   }
 
+  applyKnockback(velocityX) {
+    if (!Number.isFinite(velocityX)) {
+      return;
+    }
+    if (this.knockbackVelocityX < 0 && velocityX < 0) {
+      this.knockbackVelocityX = Math.min(this.knockbackVelocityX, velocityX);
+    } else {
+      this.knockbackVelocityX = velocityX;
+    }
+  }
+
   update(delta) {
     const previousX = this.x;
     const previousY = this.y;
@@ -258,6 +271,15 @@ class Player {
 
       this.x += vx * delta;
       this.y += vy * delta;
+    }
+
+    if (this.knockbackVelocityX !== 0) {
+      this.x += this.knockbackVelocityX * delta;
+      const decay = Math.exp(-6 * delta);
+      this.knockbackVelocityX *= decay;
+      if (Math.abs(this.knockbackVelocityX) < 8) {
+        this.knockbackVelocityX = 0;
+      }
     }
 
     this.x = clamp(this.x, 0, canvas.width - this.width);
@@ -1026,9 +1048,10 @@ function handleCollisions() {
         }
         player.attackCooldownTimer = 0.28;
       }
-      const knockback = 70;
-      player.x = clamp(player.x - knockback, 0, canvas.width - player.width);
+      const immediateShift = 24;
+      player.x = clamp(player.x - immediateShift, 0, canvas.width - player.width);
       player.y = clamp(player.y, 0, canvas.height - player.height);
+      player.applyKnockback(-320);
       break;
     }
   }
