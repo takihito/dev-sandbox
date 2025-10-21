@@ -20,14 +20,18 @@ const ASSET_SOURCES = {
   powerUp: "images/power_up_item.png",
 };
 
-const MAX_ATTACK_LEVEL = 10;
-const ATTACK_MULTIPLIERS = Array.from({ length: MAX_ATTACK_LEVEL + 1 }, (_, i) =>
-  Math.max(1, i),
+const MAX_ATTACK_LEVEL = 16;
+const ATTACK_MULTIPLIERS = Array.from(
+  { length: MAX_ATTACK_LEVEL + 1 },
+  (_, i) => i,
 );
 
-const SUPPORT_SHIP_COUNTS_BY_LEVEL = [0, 0, 1, 3, 5, 7, 9, 11, 13, 14, 15];
-const MAX_SUPPORT_SHIPS =
-  SUPPORT_SHIP_COUNTS_BY_LEVEL[SUPPORT_SHIP_COUNTS_BY_LEVEL.length - 1];
+const MAX_SUPPORT_SHIPS = MAX_ATTACK_LEVEL - 1;
+const SUPPORT_SHIP_COUNTS_BY_LEVEL = Array.from(
+  { length: MAX_ATTACK_LEVEL + 1 },
+  (_, level) =>
+    Math.max(0, Math.min(level - 1, MAX_SUPPORT_SHIPS)),
+);
 const SUPPORT_COLUMN_ORDER = [1, 0, 2];
 const SUPPORT_COLUMN_OFFSETS = [-70, 0, 70];
 const SUPPORT_BASE_REST_DISTANCE = 72;
@@ -198,7 +202,18 @@ class Player {
   decreasePower() {
     const previous = this.powerLevel;
     this.powerLevel = Math.max(1, this.powerLevel - 1);
-    this.syncSupportShips();
+    this.syncSupportShips({ allowReplenish: false });
+    return this.powerLevel !== previous;
+  }
+
+  removeSupportShipAt(index) {
+    if (index < 0 || index >= this.supportShips.length) {
+      return false;
+    }
+    this.supportShips.splice(index, 1);
+    const previous = this.powerLevel;
+    this.powerLevel = Math.max(1, this.powerLevel - 1);
+    this.syncSupportShips({ allowReplenish: false });
     return this.powerLevel !== previous;
   }
 
@@ -912,8 +927,10 @@ function handleCollisions() {
             new Explosion(supportCenter.x, supportCenter.y, explosionSize),
           );
           if (destroyed) {
-            player.supportShips.splice(s, 1);
-            player.syncSupportShips({ allowReplenish: false });
+            const levelChanged = player.removeSupportShipAt(s);
+            if (levelChanged) {
+              updateHud();
+            }
           }
           const enemyCenterX = enemy.x + enemy.width / 2;
           const enemyCenterY = enemy.y + enemy.height / 2;
@@ -989,8 +1006,10 @@ function handleCollisions() {
             new Explosion(supportCenter.x, supportCenter.y, explosionSize),
           );
           if (destroyed) {
-            player.supportShips.splice(s, 1);
-            player.syncSupportShips({ allowReplenish: false });
+            const levelChanged = player.removeSupportShipAt(s);
+            if (levelChanged) {
+              updateHud();
+            }
           }
         }
         blockedBySupport = true;
