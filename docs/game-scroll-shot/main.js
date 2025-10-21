@@ -48,17 +48,17 @@ function getSupportCountForLevel(powerLevel) {
 function computeSupportFormationSlots(count) {
   const slots = [];
   const targetCount = Math.min(count, MAX_SUPPORT_SHIPS);
-  let row = 0;
-  while (slots.length < targetCount) {
-    for (const column of SUPPORT_COLUMN_ORDER) {
-      if (slots.length === targetCount) {
-        break;
-      }
-      slots.push({ column, row });
-    }
-    row += 1;
+  for (let i = 0; i < targetCount; i += 1) {
+    slots.push(getSupportSlotForIndex(i));
   }
   return slots;
+}
+
+function getSupportSlotForIndex(index) {
+  const cycleLength = SUPPORT_COLUMN_ORDER.length;
+  const column = SUPPORT_COLUMN_ORDER[index % cycleLength];
+  const row = Math.floor(index / cycleLength);
+  return { column, row };
 }
 
 function formatSupportSlotKey(column, row) {
@@ -191,7 +191,7 @@ class Player {
     if (type === "power") {
       if (this.powerLevel < MAX_ATTACK_LEVEL) {
         this.powerLevel += 1;
-        this.syncSupportShips();
+        this.syncSupportShips({ preserveExistingFormation: true });
         return true;
       }
       return false;
@@ -320,18 +320,27 @@ class Player {
   }
 
   syncSupportShips(options = {}) {
-    const { allowReplenish = true } = options;
+    const {
+      allowReplenish = true,
+      preserveExistingFormation = false,
+    } = options;
     const desired = getSupportCountForLevel(this.powerLevel);
     while (this.supportShips.length > desired) {
       this.supportShips.pop();
     }
+    const originalCount = this.supportShips.length;
     if (allowReplenish) {
       while (this.supportShips.length < desired) {
         const ship = new SupportShip();
         this.supportShips.push(ship);
+        if (preserveExistingFormation) {
+          this.configureSupportShipAt(this.supportShips.length - 1);
+        }
       }
     }
-    this.configureSupportFormation();
+    if (!preserveExistingFormation || this.supportShips.length < originalCount) {
+      this.configureSupportFormation();
+    }
   }
 
   configureSupportFormation() {
@@ -363,6 +372,41 @@ class Player {
         ship.alignToLeader(leader);
       }
     }
+  }
+
+  configureSupportShipAt(index) {
+    const ship = this.supportShips[index];
+    if (!ship) {
+      return;
+    }
+    const slot = getSupportSlotForIndex(index);
+    ship.setFormation(slot.column, slot.row);
+    if (slot.row === 0) {
+      ship.alignToLeader(this);
+      return;
+    }
+    const leader = this.findSupportLeaderForSlot(
+      slot.column,
+      slot.row - 1,
+      index,
+    );
+    ship.alignToLeader(leader ?? this);
+  }
+
+  findSupportLeaderForSlot(column, row, ignoreIndex) {
+    for (let i = 0; i < this.supportShips.length; i += 1) {
+      if (i === ignoreIndex) {
+        continue;
+      }
+      const candidate = this.supportShips[i];
+      if (
+        candidate.columnIndex === column &&
+        candidate.rowIndex === row
+      ) {
+        return candidate;
+      }
+    }
+    return null;
   }
 
   drawRotatedSprite(image) {
