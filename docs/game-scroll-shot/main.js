@@ -215,7 +215,11 @@ class Player {
     this.supportShips.splice(index, 1);
     const previous = this.powerLevel;
     this.powerLevel = Math.max(1, this.powerLevel - 1);
-    this.syncSupportShips({ allowReplenish: false });
+    this.syncSupportShips({
+      allowReplenish: false,
+      preserveExistingFormation: true,
+    });
+    this.configureSupportFormation({ immediateAlign: false });
     return this.powerLevel !== previous;
   }
 
@@ -347,25 +351,39 @@ class Player {
       preserveExistingFormation = false,
     } = options;
     const desired = getSupportCountForLevel(this.powerLevel);
-    while (this.supportShips.length > desired) {
-      this.supportShips.pop();
+    const previousCount = this.supportShips.length;
+
+    if (this.supportShips.length > desired) {
+      this.supportShips.splice(desired);
     }
-    const originalCount = this.supportShips.length;
+    const trimmed = this.supportShips.length < previousCount;
+
+    const addedIndices = [];
     if (allowReplenish) {
       while (this.supportShips.length < desired) {
         const ship = new SupportShip();
         this.supportShips.push(ship);
-        if (preserveExistingFormation) {
-          this.configureSupportShipAt(this.supportShips.length - 1);
-        }
+        addedIndices.push(this.supportShips.length - 1);
       }
     }
-    if (!preserveExistingFormation || this.supportShips.length < originalCount) {
+
+    if (preserveExistingFormation) {
+      addedIndices.forEach((index) => {
+        this.configureSupportShipAt(index);
+      });
+      if (trimmed) {
+        this.configureSupportFormation({ immediateAlign: false });
+      }
+      return;
+    }
+
+    if (trimmed || addedIndices.length > 0) {
       this.configureSupportFormation();
     }
   }
 
-  configureSupportFormation() {
+  configureSupportFormation(options = {}) {
+    const { immediateAlign = true } = options;
     const count = this.supportShips.length;
     if (count === 0) {
       return;
@@ -382,7 +400,11 @@ class Player {
       const slot = slots[i];
       const ship = this.supportShips[i];
       if (slot.row === 0) {
-        ship.alignToLeader(this);
+        if (immediateAlign) {
+          ship.alignToLeader(this);
+        } else {
+          ship.setLeaderReference(this);
+        }
       } else {
         const leaderIndex = slotIndexMap.get(
           formatSupportSlotKey(slot.column, slot.row - 1),
@@ -391,7 +413,11 @@ class Player {
           leaderIndex !== undefined
             ? this.supportShips[leaderIndex]
             : this;
-        ship.alignToLeader(leader);
+        if (immediateAlign) {
+          ship.alignToLeader(leader);
+        } else {
+          ship.setLeaderReference(leader);
+        }
       }
     }
   }
@@ -500,6 +526,10 @@ class SupportShip {
     this.vx = 0;
     this.vy = 0;
     this.orientationAngle = this.getLeaderAngle();
+  }
+
+  setLeaderReference(leader) {
+    this.leader = leader || null;
   }
 
   getLeaderAngle() {
