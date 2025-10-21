@@ -73,7 +73,7 @@ const ENEMY_DEFS = {
     speed: 230,
     hp: 1,
     points: 120,
-    dropRate: 0.18,
+    dropRate: 0.32,
     fireInterval: null,
   },
   midBoss: {
@@ -438,7 +438,7 @@ class SupportShip {
     this.stiffness = 18;
     this.damping = 3;
     this.orientationAngle = 0;
-    this.maxHits = 5;
+    this.maxHits = 8;
     this.remainingHits = this.maxHits;
     this.columnIndex = 1;
     this.rowIndex = 0;
@@ -896,7 +896,7 @@ function updateExplosions(delta) {
 }
 
 function handleSpawns(delta) {
-  const spawnInterval = Math.max(0.45, 1.3 - elapsedTime * 0.01);
+  const spawnInterval = Math.max(0.9, 2.1 - elapsedTime * 0.008);
   enemySpawnTimer -= delta;
   if (enemySpawnTimer <= 0) {
     spawnEnemy("grunt");
@@ -921,7 +921,7 @@ function handleSpawns(delta) {
       canvas.width + 80,
       Math.random() * (canvas.height - 120) + 60,
     );
-    roamingPowerUpTimer = 14 + Math.random() * 8;
+    roamingPowerUpTimer = 8 + Math.random() * 6;
   }
 }
 
@@ -1180,10 +1180,10 @@ function resetGame() {
   score = 0;
   elapsedTime = 0;
   backgroundOffset = 0;
-  enemySpawnTimer = 0.5;
+  enemySpawnTimer = 1.2;
   midBossTimer = 12;
   bossTimer = 26;
-  roamingPowerUpTimer = 10;
+  roamingPowerUpTimer = 6;
   enemyShots.length = 0;
   enemies.length = 0;
   powerUps.length = 0;
