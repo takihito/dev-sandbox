@@ -33,6 +33,15 @@ body {
   font-size: 0.95rem;
 }
 
+#boss-timer {
+  min-width: 120px;
+  text-align: right;
+}
+
+#boss-timer.hidden {
+  display: none;
+}
+
 .game-container {
   position: relative;
   flex: 1;

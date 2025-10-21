@@ -8,6 +8,7 @@ const overlayTitle = document.getElementById("overlay-title");
 const overlayBody = document.getElementById("overlay-body");
 const scoreElement = document.getElementById("score");
 const attackLabel = document.getElementById("power-level");
+const bossTimerLabel = document.getElementById("boss-timer");
 
 const ASSET_SOURCES = {
   background: "images/background.png",
@@ -36,6 +37,8 @@ const SUPPORT_COLUMN_ORDER = [1, 0, 2];
 const SUPPORT_COLUMN_OFFSETS = [-70, 0, 70];
 const SUPPORT_BASE_REST_DISTANCE = 72;
 const SUPPORT_SEGMENT_SPACING = 58;
+const BOSS_TIME_LIMIT = 60;
+const BOSS_INITIAL_SPAWN_TIME = 20;
 
 function getSupportCountForLevel(powerLevel) {
   const index = Math.min(
@@ -137,6 +140,9 @@ let backgroundOffset = 0;
 let enemySpawnTimer = 0;
 let midBossTimer = 0;
 let bossTimer = 0;
+let bossClock = 0;
+let bossPresent = false;
+let bossDefeated = false;
 let roamingPowerUpTimer = 0;
 let elapsedTime = 0;
 
@@ -706,6 +712,7 @@ class Enemy {
       def.fireInterval !== null
         ? def.fireInterval * (0.7 + Math.random() * 0.6)
         : null;
+    this.hasEntered = false;
   }
 
   update(delta) {
@@ -719,7 +726,12 @@ class Enemy {
       this.x -= this.baseSpeed * delta;
       this.y += Math.sin(this.time * 2 + this.seed) * 140 * delta;
     } else if (this.type === "boss") {
-      this.x -= this.baseSpeed * delta * 0.7;
+      if (!this.hasEntered) {
+        this.x -= this.baseSpeed * delta * 0.7;
+        if (this.x + this.width <= canvas.width) {
+          this.hasEntered = true;
+        }
+      }
       this.y += Math.sin(this.time * 1.6 + this.seed) * 160 * delta;
     }
 
@@ -898,6 +910,8 @@ function updateGame(delta) {
 
   handleCollisions();
   handleSpawns(delta);
+  updateBossClock(delta);
+  updateBossTimerLabel();
 }
 
 function updateEnemyShots(delta) {
@@ -922,6 +936,11 @@ function updateEnemies(delta) {
     }
 
     if (enemy.isOffscreen) {
+      if (enemy.type === "boss") {
+        bossPresent = false;
+        bossClock = 0;
+        updateBossTimerLabel();
+      }
       enemies.splice(i, 1);
     }
   }
@@ -962,9 +981,9 @@ function handleSpawns(delta) {
   }
 
   bossTimer -= delta;
-  if (bossTimer <= 0 && !enemies.some((e) => e.type === "boss")) {
+  if (bossTimer <= 0 && !bossPresent && !bossDefeated) {
     spawnEnemy("boss");
-    bossTimer = 24 + Math.random() * 10;
+    bossTimer = 0;
   }
 
   roamingPowerUpTimer -= delta;
@@ -978,7 +997,13 @@ function handleSpawns(delta) {
 }
 
 function spawnEnemy(type) {
-  enemies.push(new Enemy(type));
+  const enemy = new Enemy(type);
+  enemies.push(enemy);
+  if (type === "boss") {
+    bossPresent = true;
+    bossClock = 0;
+    updateBossTimerLabel();
+  }
 }
 
 function spawnPowerUp(x, y) {
@@ -999,6 +1024,39 @@ function onEnemyDefeated(enemy) {
   if (Math.random() < enemy.dropRate) {
     spawnPowerUp(enemy.x, enemy.y + enemy.height / 2 - 20);
   }
+
+  if (enemy.type === "boss") {
+    bossPresent = false;
+    bossDefeated = true;
+    bossClock = 0;
+    updateBossTimerLabel();
+    triggerGameClear();
+  }
+}
+
+function updateBossClock(delta) {
+  if (!bossPresent || bossDefeated) {
+    return;
+  }
+  bossClock += delta;
+  if (bossClock >= BOSS_TIME_LIMIT) {
+    bossClock = BOSS_TIME_LIMIT;
+    triggerBossTimeout();
+  }
+}
+
+function updateBossTimerLabel() {
+  if (!bossTimerLabel) {
+    return;
+  }
+  if (!bossPresent || bossDefeated || gameState !== "running") {
+    bossTimerLabel.textContent = `TIME: ${BOSS_TIME_LIMIT.toFixed(1)}`;
+    bossTimerLabel.classList.add("hidden");
+    return;
+  }
+  const remaining = Math.max(0, BOSS_TIME_LIMIT - bossClock);
+  bossTimerLabel.textContent = `TIME: ${remaining.toFixed(1)}`;
+  bossTimerLabel.classList.remove("hidden");
 }
 
 function handleCollisions() {
@@ -1028,23 +1086,25 @@ function handleCollisions() {
               updateHud();
             }
           }
-          const enemyCenterX = enemy.x + enemy.width / 2;
-          const enemyCenterY = enemy.y + enemy.height / 2;
-          const angle = Math.atan2(
-            enemyCenterY - supportCenter.y,
-            enemyCenterX - supportCenter.x,
-          );
-          const pushDistance = 60;
-          enemy.x = clamp(
-            enemy.x + Math.cos(angle) * pushDistance,
-            -enemy.width,
-            canvas.width,
-          );
-          enemy.y = clamp(
-            enemy.y + Math.sin(angle) * pushDistance,
-            -enemy.height,
-            canvas.height - enemy.height,
-          );
+          if (enemy.type !== "boss") {
+            const enemyCenterX = enemy.x + enemy.width / 2;
+            const enemyCenterY = enemy.y + enemy.height / 2;
+            const angle = Math.atan2(
+              enemyCenterY - supportCenter.y,
+              enemyCenterX - supportCenter.x,
+            );
+            const pushDistance = 60;
+            enemy.x = clamp(
+              enemy.x + Math.cos(angle) * pushDistance,
+              -enemy.width,
+              canvas.width,
+            );
+            enemy.y = clamp(
+              enemy.y + Math.sin(angle) * pushDistance,
+              -enemy.height,
+              canvas.height - enemy.height,
+            );
+          }
         }
         handledBySupport = true;
         break;
@@ -1235,13 +1295,17 @@ function resetGame() {
   backgroundOffset = 0;
   enemySpawnTimer = 1.2;
   midBossTimer = 12;
-  bossTimer = 26;
+  bossTimer = BOSS_INITIAL_SPAWN_TIME;
+  bossClock = 0;
+  bossPresent = false;
+  bossDefeated = false;
   roamingPowerUpTimer = 6;
   enemyShots.length = 0;
   enemies.length = 0;
   powerUps.length = 0;
   explosions.length = 0;
   player.reset();
+  updateBossTimerLabel();
   updateHud();
 }
 
@@ -1261,9 +1325,38 @@ function triggerGameOver() {
     return;
   }
   gameState = "gameover";
+  updateBossTimerLabel();
   setOverlay(
     "武装が停止しました",
     `SCORE: ${score.toString().padStart(6, "0")} / スペースキー または タップ・クリックで再スタート`,
+  );
+}
+
+function triggerBossTimeout() {
+  if (gameState !== "running") {
+    return;
+  }
+  bossPresent = false;
+  bossClock = 0;
+  gameState = "gameover";
+  updateBossTimerLabel();
+  setOverlay(
+    "時間切れ",
+    `SCORE: ${score.toString().padStart(6, "0")} / ボスを${BOSS_TIME_LIMIT}秒以内に撃破できませんでした。スペースキー または タップ・クリックで再スタート`,
+  );
+}
+
+function triggerGameClear() {
+  if (gameState !== "running") {
+    return;
+  }
+  bossPresent = false;
+  bossClock = 0;
+  gameState = "gameover";
+  updateBossTimerLabel();
+  setOverlay(
+    "全敵撃破！",
+    `SCORE: ${score.toString().padStart(6, "0")} / おめでとうございます。スペースキー または タップ・クリックで再スタート`,
   );
 }
 
