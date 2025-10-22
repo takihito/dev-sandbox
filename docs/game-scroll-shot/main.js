@@ -133,6 +133,28 @@ const enemies = [];
 const powerUps = [];
 const explosions = [];
 
+const ENEMY_SPRITE_KEYS = new Set(["enemy1", "enemy2", "enemy3"]);
+
+function createSpriteMask(image) {
+  const width = image.naturalWidth || image.width;
+  const height = image.naturalHeight || image.height;
+  if (width === 0 || height === 0) {
+    return null;
+  }
+  const offscreen = document.createElement("canvas");
+  offscreen.width = width;
+  offscreen.height = height;
+  const context = offscreen.getContext("2d");
+  if (!context) {
+    return null;
+  }
+  context.drawImage(image, 0, 0, width, height);
+  context.globalCompositeOperation = "source-in";
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, width, height);
+  return offscreen;
+}
+
 let gameState = "loading";
 let score = 0;
 let lastTime = 0;
@@ -794,13 +816,30 @@ class Enemy {
   }
 
   draw() {
-    const sprite = assets[ENEMY_DEFS[this.type].sprite];
-    ctx.save();
-    if (this.damageFlashTimer > 0) {
-      ctx.filter = "invert(100%)";
+    const def = ENEMY_DEFS[this.type];
+    const spriteKey = def.sprite;
+    const sprite = assets[spriteKey];
+    if (!sprite) {
+      return;
     }
     ctx.drawImage(sprite, this.x, this.y, this.width, this.height);
-    ctx.restore();
+    if (this.damageFlashTimer <= 0) {
+      return;
+    }
+    const maskKey = `${spriteKey}Mask`;
+    const mask = assets[maskKey];
+    if (mask) {
+      ctx.save();
+      ctx.globalCompositeOperation = "difference";
+      ctx.drawImage(mask, this.x, this.y, this.width, this.height);
+      ctx.restore();
+    } else {
+      ctx.save();
+      ctx.globalCompositeOperation = "source-atop";
+      ctx.filter = "invert(100%)";
+      ctx.drawImage(sprite, this.x, this.y, this.width, this.height);
+      ctx.restore();
+    }
   }
 
   getBounds() {
@@ -899,6 +938,12 @@ function loadAssets() {
           img.src = src;
           img.onload = () => {
             assets[key] = img;
+            if (ENEMY_SPRITE_KEYS.has(key)) {
+              const mask = createSpriteMask(img);
+              if (mask) {
+                assets[`${key}Mask`] = mask;
+              }
+            }
             resolve();
           };
           img.onerror = reject;
