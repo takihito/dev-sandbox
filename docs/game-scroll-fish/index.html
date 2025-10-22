@@ -19,15 +19,17 @@
       <div class="stats">
         <span id="score-label">SCORE: <span id="score">0</span></span>
         <span id="power-level">ATTACK: 1 / 16</span>
-        <span id="boss-timer" class="hidden">TIME: 60.0</span>
       </div>
     </header>
     <main class="game-container">
-      <canvas id="gameCanvas" width="960" height="540"></canvas>
-      <div id="overlay" class="overlay hidden">
-        <div class="message-box">
-          <h2 id="overlay-title">ゲームオーバー</h2>
-          <p id="overlay-body">スペースキー または タップ・クリックで再スタート</p>
+      <div class="playfield">
+        <canvas id="gameCanvas" width="960" height="540"></canvas>
+        <div id="boss-timer" class="hidden">TIME: 60.0</div>
+        <div id="overlay" class="overlay hidden">
+          <div class="message-box">
+            <h2 id="overlay-title">ゲームオーバー</h2>
+            <p id="overlay-body">スペースキー または タップ・クリックで再スタート</p>
+          </div>
         </div>
       </div>
     </main>
