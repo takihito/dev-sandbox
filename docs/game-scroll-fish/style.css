@@ -1,0 +1,123 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+  color: #f8f8f8;
+  background: #000;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.top-bar {
+  background: rgba(0, 0, 0, 0.75);
+  padding: 8px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  backdrop-filter: blur(4px);
+}
+
+.title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.top-bar-logo {
+  height: 64px;
+  width: auto;
+  display: block;
+}
+
+.top-bar h1 {
+  margin: 0;
+  font-size: 1.3rem;
+  letter-spacing: 0.08em;
+}
+
+.stats {
+  display: flex;
+  gap: 12px;
+  font-size: 0.95rem;
+}
+
+#boss-timer {
+  min-width: 120px;
+  text-align: right;
+}
+
+#boss-timer.hidden {
+  display: none;
+}
+
+.game-container {
+  position: relative;
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 16px;
+  background: url("images/background_large_fish.png") center / cover no-repeat;
+}
+
+canvas {
+  max-width: 100%;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  background-color: rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 24px rgba(0, 0, 0, 0.8);
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.7);
+  transition: opacity 0.2s ease;
+}
+
+.overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.overlay-image {
+  display: block;
+  max-width: min(320px, 80vw);
+  width: 100%;
+  height: auto;
+  margin: 0 auto 16px;
+}
+
+.overlay-image.hidden {
+  display: none;
+}
+
+.message-box {
+  background: rgba(10, 10, 10, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  padding: 24px 32px;
+  text-align: center;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.message-box h2 {
+  margin-top: 0;
+  margin-bottom: 12px;
+  font-size: 1.6rem;
+}
+
+.controls {
+  background: rgba(0, 0, 0, 0.75);
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  text-align: center;
+}
