@@ -20,7 +20,8 @@ const ASSET_SOURCES = {
   enemy3: "images/enemy_fish3.png",
   laser: "images/laser_shot.png",
   explosion: "images/explosion_effect.png",
-  powerUp: "images/drop_fish_blue.png",
+  powerUpBlue: "images/drop_fish_blue.png",
+  powerUpGold: "images/drop_fish_gold.png",
 };
 
 // enemy_fish3.png                background_color_fish.png       drop_fish_blue.png              enemy_fish1.png                 gold_fish.png
@@ -239,10 +240,17 @@ class Player {
     return ATTACK_MULTIPLIERS[this.powerLevel] || 0;
   }
 
-  upgrade(type) {
+  upgrade(type, amount = 1) {
     if (type === "power") {
-      if (this.powerLevel < MAX_ATTACK_LEVEL) {
-        this.powerLevel += 1;
+      if (this.powerLevel >= MAX_ATTACK_LEVEL) {
+        return false;
+      }
+      const previous = this.powerLevel;
+      this.powerLevel = Math.min(
+        MAX_ATTACK_LEVEL,
+        this.powerLevel + Math.max(1, amount),
+      );
+      if (this.powerLevel !== previous) {
         this.syncSupportShips({ preserveExistingFormation: true });
         return true;
       }
@@ -933,12 +941,17 @@ class Enemy {
 }
 
 class PowerUp {
-  constructor(x, y) {
+  constructor(x, y, options = {}) {
     this.x = x;
     this.y = y;
     this.width = 48;
     this.height = 48;
     this.time = 0;
+    this.spriteKey = options.spriteKey || "powerUpBlue";
+    this.powerAmount =
+      options.powerAmount !== undefined
+        ? Math.max(1, Math.floor(options.powerAmount))
+        : 1;
   }
 
   update(delta) {
@@ -949,7 +962,10 @@ class PowerUp {
   }
 
   draw() {
-    ctx.drawImage(assets.powerUp, this.x, this.y, this.width, this.height);
+    const sprite = assets[this.spriteKey] || assets.powerUpBlue;
+    if (sprite) {
+      ctx.drawImage(sprite, this.x, this.y, this.width, this.height);
+    }
     ctx.save();
     // Uncomment below to show "help" text on power-up
     //ctx.font = "bold 16px 'Segoe UI'";
@@ -1146,8 +1162,21 @@ function spawnEnemy(type) {
   }
 }
 
-function spawnPowerUp(x, y) {
-  powerUps.push(new PowerUp(x, y));
+function spawnPowerUp(x, y, options) {
+  powerUps.push(new PowerUp(x, y, options));
+}
+
+function resolveEnemyDropConfig(enemy) {
+  if (enemy.type === "midBoss") {
+    return {
+      spriteKey: "powerUpGold",
+      powerAmount: 5,
+    };
+  }
+  return {
+    spriteKey: "powerUpBlue",
+    powerAmount: 1,
+  };
 }
 
 function onEnemyDefeated(enemy) {
@@ -1172,7 +1201,7 @@ function onEnemyDefeated(enemy) {
       12,
       canvas.height - 48 - 12,
     );
-    spawnPowerUp(dropX, dropY);
+    spawnPowerUp(dropX, dropY, resolveEnemyDropConfig(enemy));
   }
 
   if (enemy.type === "boss") {
@@ -1181,7 +1210,7 @@ function onEnemyDefeated(enemy) {
     bossClock = 0;
     updateBossTimerLabel();
     pendingGameClear = true;
-    pendingGameClearTimer = 2.5;
+    pendingGameClearTimer = 1.8;
   }
 }
 
@@ -1361,7 +1390,7 @@ function handleCollisions() {
   for (let i = powerUps.length - 1; i >= 0; i -= 1) {
     const item = powerUps[i];
     if (rectsOverlap(playerBounds, item.getBounds())) {
-      const applied = player.upgrade("power");
+      const applied = player.upgrade("power", item.powerAmount);
       if (!applied) {
         score += 200;
         updateHud();
