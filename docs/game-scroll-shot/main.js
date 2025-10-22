@@ -76,7 +76,7 @@ const ENEMY_DEFS = {
     speed: 230,
     hp: 1,
     points: 120,
-    dropRate: 0.50,
+    dropRate: 0.75,
     fireInterval: null,
   },
   midBoss: {
@@ -84,9 +84,9 @@ const ENEMY_DEFS = {
     width: 128,
     height: 104,
     speed: 170,
-    hp: 7,
+    hp: 3,
     points: 620,
-    dropRate: 0.65,
+    dropRate: 0.95,
     fireInterval: 2.4,
   },
   boss: {
@@ -515,7 +515,7 @@ class SupportShip {
     this.stiffness = 18;
     this.damping = 3;
     this.orientationAngle = 0;
-    this.maxHits = 8;
+    this.maxHits = 5;
     this.remainingHits = this.maxHits;
     this.columnIndex = 1;
     this.rowIndex = 0;
@@ -1154,6 +1154,15 @@ function handleCollisions() {
       const support = player.supportShips[s];
       const supportBounds = support.getBounds();
       if (rectsOverlap(supportBounds, enemyBounds)) {
+        if (!enemy.isDead) {
+          enemy.takeDamage(1);
+        }
+        if (enemy.isDead) {
+          onEnemyDefeated(enemy);
+          enemies.splice(i, 1);
+          handledBySupport = true;
+          break;
+        }
         const supportCenter = support.getCenter();
         if (player.invincibleTimer <= 0) {
           const destroyed = support.absorbHit();
