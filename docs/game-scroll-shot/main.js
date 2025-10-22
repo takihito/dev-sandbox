@@ -133,7 +133,7 @@ const enemies = [];
 const powerUps = [];
 const explosions = [];
 
-const ENEMY_SPRITE_KEYS = new Set(["enemy1", "enemy2", "enemy3"]);
+const MASK_SPRITE_KEYS = new Set(["enemy1", "enemy2", "enemy3", "player"]);
 
 function createSpriteMask(image) {
   const width = image.naturalWidth || image.width;
@@ -357,8 +357,9 @@ class Player {
 
   draw() {
     const sprite = assets.player;
+    const mask = assets.playerMask;
     this.supportShips.forEach((ship) =>
-      ship.draw(sprite, this.invincibleTimer),
+      ship.draw(sprite, mask, this.invincibleTimer),
     );
     if (
       this.invincibleTimer > 0 &&
@@ -520,6 +521,7 @@ class SupportShip {
     this.rowIndex = 0;
     this.lateralOffset = 0;
     this.leader = null;
+    this.damageFlashTimer = 0;
   }
 
   setFormation(columnIndex, rowIndex) {
@@ -595,6 +597,9 @@ class SupportShip {
     if (!this.leader) {
       return;
     }
+    if (this.damageFlashTimer > 0) {
+      this.damageFlashTimer = Math.max(0, this.damageFlashTimer - delta);
+    }
     const target = this.getTargetPosition();
     const { x: centerX, y: centerY } = this.getCenter();
     const dx = target.x - centerX;
@@ -623,7 +628,7 @@ class SupportShip {
     }
   }
 
-  draw(sprite, invincibleTimer) {
+  draw(sprite, mask, invincibleTimer) {
     const centerX = this.x + this.width / 2;
     const centerY = this.y + this.height / 2;
     ctx.save();
@@ -642,6 +647,28 @@ class SupportShip {
       this.width,
       this.height,
     );
+    if (this.damageFlashTimer > 0) {
+      if (mask) {
+        ctx.globalCompositeOperation = "difference";
+        ctx.drawImage(
+          mask,
+          -this.width / 2,
+          -this.height / 2,
+          this.width,
+          this.height,
+        );
+      } else {
+        ctx.globalCompositeOperation = "source-atop";
+        ctx.filter = "invert(100%)";
+        ctx.drawImage(
+          sprite,
+          -this.width / 2,
+          -this.height / 2,
+          this.width,
+          this.height,
+        );
+      }
+    }
     ctx.restore();
   }
 
@@ -663,6 +690,7 @@ class SupportShip {
 
   absorbHit() {
     this.remainingHits = Math.max(0, this.remainingHits - 1);
+    this.damageFlashTimer = Math.max(this.damageFlashTimer, 0.18);
     return this.remainingHits <= 0;
   }
 }
@@ -938,7 +966,7 @@ function loadAssets() {
           img.src = src;
           img.onload = () => {
             assets[key] = img;
-            if (ENEMY_SPRITE_KEYS.has(key)) {
+            if (MASK_SPRITE_KEYS.has(key)) {
               const mask = createSpriteMask(img);
               if (mask) {
                 assets[`${key}Mask`] = mask;
