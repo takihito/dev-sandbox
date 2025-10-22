@@ -6,7 +6,6 @@ const ctx = canvas.getContext("2d");
 const overlay = document.getElementById("overlay");
 const overlayTitle = document.getElementById("overlay-title");
 const overlayBody = document.getElementById("overlay-body");
-const overlayImage = document.getElementById("overlay-image");
 const scoreElement = document.getElementById("score");
 const attackLabel = document.getElementById("power-level");
 const bossTimerLabel = document.getElementById("boss-timer");
@@ -1482,29 +1481,14 @@ function updateHud() {
   attackLabel.textContent = `ATTACK: ${player.powerLevel} / ${MAX_ATTACK_LEVEL}`;
 }
 
-function setOverlay(title, body, options = {}) {
-  const { image = null, alt = "" } = options;
+function setOverlay(title, body) {
   overlayTitle.textContent = title;
   overlayBody.textContent = body;
-  if (overlayImage) {
-    if (image) {
-      overlayImage.src = image;
-      overlayImage.alt = alt;
-      overlayImage.classList.remove("hidden");
-    } else {
-      overlayImage.removeAttribute("src");
-      overlayImage.alt = "";
-      overlayImage.classList.add("hidden");
-    }
-  }
   overlay.classList.remove("hidden");
 }
 
 function hideOverlay() {
   overlay.classList.add("hidden");
-  if (overlayImage) {
-    overlayImage.classList.add("hidden");
-  }
 }
 
 function resetGame() {
@@ -1740,10 +1724,6 @@ function init() {
       setOverlay(
         "ゲーム開始準備完了",
         "スペースキー または タップ・クリックでスタート",
-        {
-          image: "images/game_fish_title.png",
-          alt: "ゲームタイトルイメージ",
-        },
       );
       drawBackground();
       player.draw();

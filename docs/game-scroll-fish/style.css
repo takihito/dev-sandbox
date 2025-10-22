@@ -88,18 +88,6 @@ canvas {
   pointer-events: none;
 }
 
-.overlay-image {
-  display: block;
-  max-width: min(320px, 80vw);
-  width: 100%;
-  height: auto;
-  margin: 0 auto 16px;
-}
-
-.overlay-image.hidden {
-  display: none;
-}
-
 .message-box {
   background: rgba(10, 10, 10, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.4);
