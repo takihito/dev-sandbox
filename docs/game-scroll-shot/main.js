@@ -76,7 +76,7 @@ const ENEMY_DEFS = {
     speed: 230,
     hp: 1,
     points: 120,
-    dropRate: 0.32,
+    dropRate: 0.50,
     fireInterval: null,
   },
   midBoss: {
@@ -84,9 +84,9 @@ const ENEMY_DEFS = {
     width: 128,
     height: 104,
     speed: 170,
-    hp: 5,
+    hp: 7,
     points: 620,
-    dropRate: 0.45,
+    dropRate: 0.65,
     fireInterval: 2.4,
   },
   boss: {
@@ -94,7 +94,7 @@ const ENEMY_DEFS = {
     width: 220,
     height: 164,
     speed: 110,
-    hp: 20,
+    hp: 50,
     points: 3200,
     dropRate: 1,
     fireInterval: 1.7,
@@ -713,11 +713,15 @@ class Enemy {
         ? def.fireInterval * (0.7 + Math.random() * 0.6)
         : null;
     this.hasEntered = false;
+    this.damageFlashTimer = 0;
   }
 
   update(delta) {
     this.time += delta;
     const drift = Math.sin(this.time * 3 + this.seed);
+    if (this.damageFlashTimer > 0) {
+      this.damageFlashTimer = Math.max(0, this.damageFlashTimer - delta);
+    }
 
     if (this.type === "grunt") {
       this.x -= this.baseSpeed * delta;
@@ -778,6 +782,7 @@ class Enemy {
 
   takeDamage(amount) {
     this.hp -= amount;
+    this.damageFlashTimer = Math.max(this.damageFlashTimer, 0.18);
   }
 
   get isDead() {
@@ -790,7 +795,12 @@ class Enemy {
 
   draw() {
     const sprite = assets[ENEMY_DEFS[this.type].sprite];
+    ctx.save();
+    if (this.damageFlashTimer > 0) {
+      ctx.filter = "invert(100%)";
+    }
     ctx.drawImage(sprite, this.x, this.y, this.width, this.height);
+    ctx.restore();
   }
 
   getBounds() {
