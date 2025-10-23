@@ -1559,8 +1559,8 @@ function triggerGameClear() {
   gameState = "gameover";
   updateBossTimerLabel();
   setOverlay(
-    "全敵撃破！",
-    `SCORE: ${score.toString().padStart(6, "0")} / おめでとうございます。スペースキー または タップ・クリックで再スタート`,
+    "BOSS 撃破！",
+    `SCORE: ${score.toString().padStart(6, "0")} / Great!! おめでとうございます。スペースキー または タップ・クリックで再スタート`,
   );
   pendingGameClear = false;
   pendingGameClearTimer = 0;
