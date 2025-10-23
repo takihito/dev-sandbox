@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>横スクロールシューティング</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="top-bar">
+      <div class="title-group">
+        <img
+          src="images/game_fish_title.png"
+          alt="ゲームタイトル"
+          class="top-bar-logo"
+        />
+        <h1>横スクロールシューティング</h1>
+      </div>
+      <div class="stats">
+        <span id="score-label">SCORE: <span id="score">0</span></span>
+        <span id="power-level">ATTACK: 1 / 16</span>
+      </div>
+    </header>
+    <main class="game-container">
+      <div class="playfield">
+        <canvas id="gameCanvas" width="960" height="540"></canvas>
+        <div id="boss-timer" class="hidden">TIME: 60.0</div>
+        <div id="overlay" class="overlay hidden">
+          <div class="message-box">
+            <h2 id="overlay-title">ゲームオーバー</h2>
+            <p id="overlay-body">スペースキー または タップ・クリックで再スタート</p>
+          </div>
+        </div>
+      </div>
+    </main>
+    <footer class="controls">
+      <p>操作: 矢印キー / WASD または マウス / タッチで移動（体当たりで攻撃）</p>
+    </footer>
+    <script src="main.js"></script>
+  </body>
+</html>
