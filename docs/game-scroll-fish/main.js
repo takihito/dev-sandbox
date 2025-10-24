@@ -1494,7 +1494,7 @@ function updateHud() {
 
 function setOverlay(title, body) {
   overlayTitle.textContent = title;
-  overlayBody.textContent = body;
+  overlayBody.innerHTML = body;
   overlay.classList.remove("hidden");
 }
 
@@ -1573,14 +1573,14 @@ function triggerGameClear() {
   const formattedScore = score.toString().padStart(6, "0");
   const remainingSupportShips = player.supportShips.length;
   const messageLines = [
-    `SCORE: ${formattedScore}`,
-    `🐟️助けたスイミー: ${totalSupportShipsObtained}匹`,
-    `🐟️生き残ったスイミー: ${remainingSupportShips}匹`,
+    `<font color="red">SCORE: ${formattedScore}</font>`,
+    `🐟️<font color="pink">助けたスクミー: ${totalSupportShipsObtained}匹</font>`,
+    `🐟️<font color="green">生き残ったスクミー: ${remainingSupportShips}匹</font>`,
     "スペースキー または タップ・クリックで再スタート",
   ];
   setOverlay(
     "BOSS 撃破！",
-    messageLines.join("\n"),
+    messageLines.join("<br/>"),
   );
   pendingGameClear = false;
   pendingGameClearTimer = 0;
