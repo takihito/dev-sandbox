@@ -24,9 +24,6 @@ const ASSET_SOURCES = {
   effectStar: "images/effect_star.png",
 };
 
-// enemy_fish3.png                background_color_fish.png       drop_fish_blue.png              enemy_fish1.png                 gold_fish.png
-// backgroud_large_fish.png        background_fish.png             drop_fish_gold.png              enemy_fish2.png                 red_fish.png
-
 const MAX_ATTACK_LEVEL = 16;
 const ATTACK_MULTIPLIERS = Array.from(
   { length: MAX_ATTACK_LEVEL + 1 },
@@ -147,6 +144,8 @@ const enemyShots = [];
 const enemies = [];
 const powerUps = [];
 const explosions = [];
+
+let totalSupportShipsObtained = 0;
 
 const MASK_SPRITE_KEYS = new Set([
   "enemy1",
@@ -425,6 +424,7 @@ class Player {
         const ship = new SupportShip();
         this.supportShips.push(ship);
         addedIndices.push(this.supportShips.length - 1);
+        totalSupportShipsObtained += 1;
       }
     }
 
@@ -1517,6 +1517,7 @@ function resetGame() {
   enemies.length = 0;
   powerUps.length = 0;
   explosions.length = 0;
+  totalSupportShipsObtained = 0;
   player.reset();
   updateBossTimerLabel();
   updateHud();
@@ -1569,9 +1570,17 @@ function triggerGameClear() {
   bossClock = 0;
   gameState = "gameover";
   updateBossTimerLabel();
+  const formattedScore = score.toString().padStart(6, "0");
+  const remainingSupportShips = player.supportShips.length;
+  const messageLines = [
+    `SCORE: ${formattedScore}`,
+    `🐟️助けたスイミー: ${totalSupportShipsObtained}匹`,
+    `🐟️生き残ったスイミー: ${remainingSupportShips}匹`,
+    "スペースキー または タップ・クリックで再スタート",
+  ];
   setOverlay(
     "BOSS 撃破！",
-    `SCORE: ${score.toString().padStart(6, "0")} / Great!! おめでとうございます。スペースキー または タップ・クリックで再スタート`,
+    messageLines.join("\n"),
   );
   pendingGameClear = false;
   pendingGameClearTimer = 0;
