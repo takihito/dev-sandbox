@@ -547,7 +547,7 @@ class SupportShip {
     this.stiffness = 18;
     this.damping = 3;
     this.orientationAngle = 0;
-    this.maxHits = 5;
+    this.maxHits = 12;
     this.remainingHits = this.maxHits;
     this.columnIndex = 1;
     this.rowIndex = 0;
