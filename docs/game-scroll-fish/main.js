@@ -21,6 +21,7 @@ const ASSET_SOURCES = {
   explosion: "images/explosion_effect.png",
   powerUpBlue: "images/drop_fish_blue.png",
   powerUpGold: "images/drop_fish_gold.png",
+  effectStar: "images/effect_star.png",
 };
 
 // enemy_fish3.png                background_color_fish.png       drop_fish_blue.png              enemy_fish1.png                 gold_fish.png
@@ -989,12 +990,17 @@ class PowerUp {
 }
 
 class Explosion {
-  constructor(x, y, size) {
+  constructor(x, y, size, options = {}) {
     this.x = x;
     this.y = y;
     this.size = size;
     this.elapsed = 0;
-    this.duration = 0.55;
+    this.duration =
+      typeof options.duration === "number" ? options.duration : 0.55;
+    this.spriteKey =
+      typeof options.spriteKey === "string" && options.spriteKey.length > 0
+        ? options.spriteKey
+        : "explosion";
   }
 
   update(delta) {
@@ -1005,10 +1011,14 @@ class Explosion {
     const progress = clamp(this.elapsed / this.duration, 0, 1);
     const scale = 0.7 + progress * 1.6;
     const alpha = 1 - progress;
+    const sprite = assets[this.spriteKey] || assets.explosion;
+    if (!sprite) {
+      return;
+    }
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.drawImage(
-      assets.explosion,
+      sprite,
       this.x - (this.size * scale) / 2,
       this.y - (this.size * scale) / 2,
       this.size * scale,
@@ -1400,6 +1410,7 @@ function handleCollisions() {
           player.x + player.width / 2,
           player.y + player.height / 2,
           80,
+          { spriteKey: "effectStar" },
         ),
       );
       updateHud();
