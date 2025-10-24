@@ -12,7 +12,7 @@ const bossTimerLabel = document.getElementById("boss-timer");
 
 const ASSET_SOURCES = {
   background: "images/background.png",
-  player: "images/player.png",
+  player: "images/player_main.png",
   support_player: "images/player.png",
   enemy1: "images/enemy1.png",
   enemy2: "images/enemy2.png",
