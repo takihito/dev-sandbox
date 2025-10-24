@@ -191,8 +191,8 @@ let pendingGameClearTimer = 0;
 
 class Player {
   constructor() {
-    this.width = 84;
-    this.height = 72;
+    this.width = 100;
+    this.height = 90;
     this.speed = 260;
     this.invincibleTimer = 0;
     this.lastMoveX = 0;
