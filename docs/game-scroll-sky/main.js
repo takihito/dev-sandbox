@@ -1727,8 +1727,8 @@ function init() {
       gameState = "ready";
       updateHud();
       setOverlay(
-        "ゲーム開始準備完了",
-        "スペースキー または タップ・クリックでスタート",
+        "早く帰らないとトイレが間に合わない！",
+        "スペースキー または タップ・クリックでスタート/体当たりで攻撃！",
       );
       drawBackground();
       player.draw();

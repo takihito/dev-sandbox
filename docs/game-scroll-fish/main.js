@@ -1742,8 +1742,8 @@ function init() {
       gameState = "ready";
       updateHud();
       setOverlay(
-        "ゲーム開始準備完了",
-        "スペースキー または タップ・クリックでスタート",
+        "そうだ！みんなで集まるんだ！",
+        "スペースキー または タップ・クリックでスタート/体当たりで攻撃！",
       );
       drawBackground();
       player.draw();
