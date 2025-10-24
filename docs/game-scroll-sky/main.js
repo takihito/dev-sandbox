@@ -19,6 +19,7 @@ const ASSET_SOURCES = {
   enemy3: "images/enemy3.png",
   laser: "images/laser_shot.png",
   explosion: "images/explosion_effect.png",
+  effect_star: "images/effect_star.png",
   powerUpBlue: "images/drop_item1.png",
   powerUpGold: "images/drop_item2.png",
 };
@@ -987,12 +988,13 @@ class PowerUp {
 }
 
 class Explosion {
-  constructor(x, y, size) {
+  constructor(x, y, size, options = {}) {
     this.x = x;
     this.y = y;
     this.size = size;
     this.elapsed = 0;
     this.duration = 0.55;
+    this.spriteKey = options.spriteKey || "explosion";
   }
 
   update(delta) {
@@ -1003,10 +1005,14 @@ class Explosion {
     const progress = clamp(this.elapsed / this.duration, 0, 1);
     const scale = 0.7 + progress * 1.6;
     const alpha = 1 - progress;
+    const sprite = assets[this.spriteKey] || assets.explosion;
+    if (!sprite) {
+      return;
+    }
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.drawImage(
-      assets.explosion,
+      sprite,
       this.x - (this.size * scale) / 2,
       this.y - (this.size * scale) / 2,
       this.size * scale,
@@ -1398,6 +1404,7 @@ function handleCollisions() {
           player.x + player.width / 2,
           player.y + player.height / 2,
           80,
+          { spriteKey: "effect_star" },
         ),
       );
       updateHud();
