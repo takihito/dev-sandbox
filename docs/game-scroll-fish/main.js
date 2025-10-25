@@ -1643,10 +1643,18 @@ function triggerGameClear() {
   updateBossTimerLabel();
   const formattedScore = score.toString().padStart(6, "0");
   const remainingSupportShips = player.supportShips.length;
+  const totalRescued = totalSupportShipsObtained;
+  const survivalRate =
+    totalRescued > 0
+      ? Math.round((remainingSupportShips / totalRescued) * 100)
+      : null;
   const messageLines = [
     `<font color="red">SCORE: ${formattedScore}</font>`,
     `🐟️<font color="pink">助けたスクミー: ${totalSupportShipsObtained}匹</font>`,
-    `🐟️<font color="green">生き残ったスクミー: ${remainingSupportShips}匹</font>`,
+    `🐟️<font color="lime">生き残ったスクミー: ${remainingSupportShips}匹</font>`,
+    `🐟️<font color="orange">生存率: ${
+      survivalRate !== null ? `${survivalRate}%` : "---"
+    }</font>`,
     "スペースキー または タップ・クリックで再スタート",
   ];
   setOverlay(
