@@ -49,6 +49,12 @@ const BOSS_RETREAT_SPEED = 320;
 const BOSS_CHARGE_DURATION = 1.15;
 const BOSS_IDLE_INTERVAL_MIN = 3.2;
 const BOSS_IDLE_INTERVAL_MAX = 5.2;
+const POWER_GLOW_PULSE_SPEED = 1.6;
+const POWER_GLOW_BASE_RADIUS = 26;
+const POWER_GLOW_RADIUS_PER_LEVEL = 7;
+const POWER_GLOW_MAX_INTENSITY = 0.42;
+const POWER_GLOW_ASPECT_RATIO = 0.65;
+const POWER_GLOW_ORANGE_RGB = "255, 180, 68";
 
 function getSupportCountForLevel(powerLevel) {
   const index = Math.min(
@@ -202,6 +208,8 @@ class Player {
     this.attackCooldownTimer = 0;
     this.knockbackVelocityX = 0;
     this.supportShips = [];
+    this.powerGlowPhase = 0;
+    this.powerGlowActive = false;
     this.reset();
   }
 
@@ -216,6 +224,8 @@ class Player {
     this.attackCooldownTimer = 0;
     this.knockbackVelocityX = 0;
     this.supportShips = [];
+    this.powerGlowPhase = 0;
+    this.powerGlowActive = false;
     this.syncSupportShips();
   }
 
@@ -251,6 +261,7 @@ class Player {
       );
       if (this.powerLevel !== previous) {
         this.syncSupportShips({ preserveExistingFormation: true });
+        this.triggerPowerGlow();
         return true;
       }
       return false;
@@ -258,10 +269,24 @@ class Player {
     return false;
   }
 
+  triggerPowerGlow() {
+    if (this.powerLevel <= 1) {
+      this.powerGlowActive = false;
+      this.powerGlowPhase = 0;
+      return;
+    }
+    this.powerGlowActive = true;
+    this.powerGlowPhase = 0;
+  }
+
   decreasePower() {
     const previous = this.powerLevel;
     this.powerLevel = Math.max(1, this.powerLevel - 1);
     this.syncSupportShips({ allowReplenish: false });
+    if (this.powerLevel <= 1) {
+      this.powerGlowActive = false;
+      this.powerGlowPhase = 0;
+    }
     return this.powerLevel !== previous;
   }
 
@@ -277,6 +302,10 @@ class Player {
       preserveExistingFormation: true,
     });
     this.configureSupportFormation({ immediateAlign: false });
+    if (this.powerLevel <= 1) {
+      this.powerGlowActive = false;
+      this.powerGlowPhase = 0;
+    }
     return this.powerLevel !== previous;
   }
 
@@ -300,6 +329,13 @@ class Player {
     }
     if (this.attackCooldownTimer > 0) {
       this.attackCooldownTimer = Math.max(0, this.attackCooldownTimer - delta);
+    }
+    if (this.powerGlowActive) {
+      this.powerGlowPhase =
+        (this.powerGlowPhase + delta * POWER_GLOW_PULSE_SPEED) %
+        (Math.PI * 2);
+    } else {
+      this.powerGlowPhase = 0;
     }
 
     if (pointerState.active) {
@@ -392,6 +428,7 @@ class Player {
     this.supportShips.forEach((ship) =>
       ship.draw(supportSprite, supportMask, this.invincibleTimer),
     );
+    this.drawPowerGlow();
     if (
       this.invincibleTimer > 0 &&
       Math.floor(this.invincibleTimer * 12) % 2 === 0
@@ -531,6 +568,40 @@ class Player {
       this.width,
       this.height,
     );
+    ctx.restore();
+  }
+
+  drawPowerGlow() {
+    if (!this.powerGlowActive || this.powerLevel <= 1) {
+      return;
+    }
+    const pulse = 0.6 + 0.4 * Math.sin(this.powerGlowPhase);
+    const intensity = Math.max(0, Math.min(1, pulse)) * POWER_GLOW_MAX_INTENSITY;
+    const centerX = this.x + this.width / 2;
+    const centerY = this.y + this.height / 2;
+    const levelFactor = Math.max(0, this.powerLevel - 1);
+    const radius =
+      POWER_GLOW_BASE_RADIUS + POWER_GLOW_RADIUS_PER_LEVEL * levelFactor;
+    const innerRadius = radius * 0.35;
+    ctx.save();
+    ctx.translate(centerX, centerY);
+    ctx.globalCompositeOperation = "lighter";
+    ctx.scale(1, POWER_GLOW_ASPECT_RATIO);
+    const gradient = ctx.createRadialGradient(0, 0, innerRadius, 0, 0, radius);
+    gradient.addColorStop(0, `rgba(255, 255, 255, ${intensity})`);
+    gradient.addColorStop(
+      0.45,
+      `rgba(${POWER_GLOW_ORANGE_RGB}, ${intensity * 0.8})`,
+    );
+    gradient.addColorStop(
+      0.8,
+      `rgba(${POWER_GLOW_ORANGE_RGB}, ${intensity * 0.25})`,
+    );
+    gradient.addColorStop(1, "rgba(255, 255, 255, 0)");
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
   }
 }
