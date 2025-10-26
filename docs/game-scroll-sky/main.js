@@ -182,6 +182,7 @@ let enemySpawnTimer = 0;
 let midBossTimer = 0;
 let bossTimer = 0;
 let bossClock = 0;
+let lastBossTimeRemaining = null;
 let bossPresent = false;
 let bossDefeated = false;
 let roamingPowerUpTimer = 0;
@@ -1210,6 +1211,7 @@ function onEnemyDefeated(enemy) {
   if (enemy.type === "boss") {
     bossPresent = false;
     bossDefeated = true;
+    lastBossTimeRemaining = Math.max(0, BOSS_TIME_LIMIT - bossClock);
     bossClock = 0;
     updateBossTimerLabel();
     pendingGameClear = true;
@@ -1233,12 +1235,12 @@ function updateBossTimerLabel() {
     return;
   }
   if (!bossPresent || bossDefeated || gameState !== "running") {
-    bossTimerLabel.textContent = `TIME: ${BOSS_TIME_LIMIT.toFixed(1)}`;
+    bossTimerLabel.textContent = `のこり: ${BOSS_TIME_LIMIT.toFixed(1)}秒`;
     bossTimerLabel.classList.add("hidden");
     return;
   }
   const remaining = Math.max(0, BOSS_TIME_LIMIT - bossClock);
-  bossTimerLabel.textContent = `TIME: ${remaining.toFixed(1)}`;
+  bossTimerLabel.textContent = `のこり: ${remaining.toFixed(1)}秒`;
   bossTimerLabel.classList.remove("hidden");
 }
 
@@ -1486,9 +1488,16 @@ function updateHud() {
   attackLabel.textContent = `ATTACK: ${player.powerLevel} / ${MAX_ATTACK_LEVEL}`;
 }
 
+function formatSupportResultLine() {
+  const count = Array.isArray(player.supportShips)
+    ? player.supportShips.length
+    : 0;
+  return `届けたトイレの数: ${count}便 🚽 ✈️`;
+}
+
 function setOverlay(title, body) {
   overlayTitle.textContent = title;
-  overlayBody.textContent = body;
+  overlayBody.innerHTML = body;
   overlay.classList.remove("hidden");
 }
 
@@ -1504,6 +1513,7 @@ function resetGame() {
   midBossTimer = 12;
   bossTimer = BOSS_INITIAL_SPAWN_TIME;
   bossClock = 0;
+  lastBossTimeRemaining = null;
   bossPresent = false;
   bossDefeated = false;
   roamingPowerUpTimer = 6;
@@ -1534,10 +1544,11 @@ function triggerGameOver() {
     return;
   }
   gameState = "gameover";
+  lastBossTimeRemaining = null;
   updateBossTimerLabel();
   setOverlay(
     "武装が停止しました",
-    `SCORE: ${score.toString().padStart(6, "0")} / スペースキー または タップ・クリックで再スタート`,
+    `SCORE: ${score.toString().padStart(6, "0")}<br/>${formatSupportResultLine()}<br/>スペースキー または タップ・クリックで再スタート`,
   );
 }
 
@@ -1547,11 +1558,12 @@ function triggerBossTimeout() {
   }
   bossPresent = false;
   bossClock = 0;
+  lastBossTimeRemaining = 0;
   gameState = "gameover";
   updateBossTimerLabel();
   setOverlay(
     "時間切れ",
-    `SCORE: ${score.toString().padStart(6, "0")} / ボスを${BOSS_TIME_LIMIT}秒以内に撃破できませんでした。スペースキー または タップ・クリックで再スタート`,
+    `SCORE: ${score.toString().padStart(6, "0")}<br/>${formatSupportResultLine()}<br/>ボスを${BOSS_TIME_LIMIT}秒以内に撃破できませんでした。スペースキー または タップ・クリックで再スタート`,
   );
 }
 
@@ -1559,13 +1571,15 @@ function triggerGameClear() {
   if (gameState !== "running") {
     return;
   }
+  const displayTime = lastBossTimeRemaining ?? Math.max(0, BOSS_TIME_LIMIT - bossClock);
   bossPresent = false;
   bossClock = 0;
+  lastBossTimeRemaining = displayTime;
   gameState = "gameover";
   updateBossTimerLabel();
   setOverlay(
     "BOSS 撃破！",
-    `SCORE: ${score.toString().padStart(6, "0")} /  やったー！！スペースキー または タップ・クリックで再スタート`,
+    `SCORE: ${score.toString().padStart(6, "0")} <br/> <font color="yellow">のこり時間: ${displayTime.toFixed(1)} 秒 </font><br/>${formatSupportResultLine()}<br/> トイレが間に合ったー😂🍦<br/>スペースキー または タップ・クリックで再スタート</font>`,
   );
   pendingGameClear = false;
   pendingGameClearTimer = 0;
